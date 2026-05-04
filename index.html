@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>海角灯塔骑行路线</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+#map { width: 100vw; height: 100vh; }
+
+.panel {
+  position: fixed; top: 12px; left: 12px;
+  background: rgba(255,255,255,0.95);
+  border-radius: 10px; padding: 12px 16px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.15);
+  font-size: 13px; color: #333; z-index: 1000;
+  line-height: 1.8; max-width: 260px;
+}
+.panel strong { color: #722ed1; }
+
+.switcher {
+  position: fixed; top: 12px; right: 12px;
+  display: flex; gap: 6px; z-index: 1000;
+}
+.switcher button {
+  padding: 6px 12px; border-radius: 8px;
+  border: 2px solid #722ed1;
+  background: #fff; color: #722ed1;
+  font-size: 12px; font-weight: 600;
+  cursor: pointer; transition: all 0.2s;
+}
+.switcher button:hover { background: #f5f0ff; }
+.switcher button.active {
+  background: #722ed1; color: #fff;
+}
+
+.sitemarker {
+  background: #722ed1; color: #fff;
+  border-radius: 50%; width: 28px; height: 28px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700;
+  border: 2px solid #fff; box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+}
+</style>
+</head>
+<body>
+
+<div class="panel">
+  <strong>🚴 海角灯塔骑行路线</strong><br/>
+  📍 站点：11<br/>
+  📏 总里程：约 62km<br/>
+  <span id="coordsys">🗺️ 切换地图使用</span>
+</div>
+
+<div class="switcher">
+  <button id="btn-amap" class="active" onclick="switchMap('amap')">高德</button>
+  <button id="btn-baidu" onclick="switchMap('baidu')">百度</button>
+  <button id="btn-google" onclick="switchMap('google')">Google</button>
+</div>
+
+<div id="map"></div>
+
+<script>
+// ========== 座標數據（預先計算好三套座標） ==========
+const DATA = {
+  // WGS-84 (原始) → 計算後的 GCJ-02 和 BD-09
+  // 計算公式：WGS-84 → GCJ-02 → BD-09
+  wgs84: [
+    [22.809759, 114.808745, '0 海角灯塔', '~15m'],
+    [22.770000, 114.808000, '1 湿地公园', '~3m'],
+    [22.685888, 114.757481, '2 巽寮湾风景区', '~5m'],
+    [22.588555, 114.756962, '3 碧甲湾赶海公园', '~3m'],
+    [22.602305, 114.872458, '4 双月湾', '~3m'],
+    [22.572312, 114.893850, '5 情人堤', '~2m'],
+    [22.557592, 114.897165, '6 大星山观景台', '~80m'],
+    [22.628916, 114.923644, '7 情人岛', '~5m'],
+    [22.666128, 114.957905, '8 黑排角', '~10m'],
+    [22.679964, 114.972402, '9 湾仔村', '~8m'],
+    [22.680000, 114.950000, '10 黑牌脚', '~15m'],
+  ],
+  // WGS-84 → GCJ-02 轉換後（預計算）
+  gcj02: [
+    [22.818261, 114.826329, '0 海角灯塔', '~15m'],
+    [22.778648, 114.825889, '1 湿地公园', '~3m'],
+    [22.695018, 114.776377, '2 巽寮湾风景区', '~5m'],
+    [22.598037, 114.776596, '3 碧甲湾赶海公园', '~3m'],
+    [22.611328, 114.891134, '4 双月湾', '~3m'],
+    [22.581367, 114.912593, '5 情人堤', '~2m'],
+    [22.566689, 114.915995, '6 大星山观景台', '~80m'],
+    [22.637662, 114.941740, '7 情人岛', '~5m'],
+    [22.674618, 114.975467, '8 黑排角', '~10m'],
+    [22.688353, 114.989753, '9 湾仔村', '~8m'],
+    [22.688468, 114.967516, '10 黑牌脚', '~15m'],
+  ],
+  // GCJ-02 → BD-09 轉換後（預計算）
+  bd09: [
+    [22.824525, 114.832794, '0 海角灯塔', '~15m'],
+    [22.784899, 114.832321, '1 湿地公园', '~3m'],
+    [22.700683, 114.782958, '2 巽寮湾风景区', '~5m'],
+    [22.603702, 114.783181, '3 碧甲湾赶海公园', '~3m'],
+    [22.617022, 114.897703, '4 双月湾', '~3m'],
+    [22.587098, 114.919165, '5 情人堤', '~2m'],
+    [22.572459, 114.922547, '6 大星山观景台', '~80m'],
+    [22.643857, 114.948185, '7 情人岛', '~5m'],
+    [22.680855, 114.981915, '8 黑排角', '~10m'],
+    [22.694359, 114.996260, '9 湾仔村', '~8m'],
+    [22.694788, 114.973962, '10 黑牌脚', '~15m'],
+  ],
+};
+
+// ========== 地圖切片 URL ==========
+const TILES = {
+  amap: 'https://webrd04.is.autonavi.com/appmaptile?style=8&x={x}&y={y}&z={z}',
+  baidu: 'https://maponline0.bdimg.com/stylonline/atlas/vt?lyrs=s&scale=1&x={x}&y={y}&z={z}',
+  google: 'https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',
+};
+
+// ========== 當前地圖對象 ==========
+let map, markers = [], line;
+
+const icon = L.divIcon({
+  html: '<div style="background:#722ed1;color:#fff;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.3)"></div>',
+  className: '', iconSize: [28, 28], iconAnchor: [14, 14],
+});
+
+function clearMap() {
+  if (markers.length) { markers.forEach(m => m.remove()); markers = []; }
+  if (line) { line.remove(); line = null; }
+}
+
+function drawRoute(coords, sysLabel) {
+  clearMap();
+  const lineCoords = coords.map(wp => [wp[0], wp[1]]);
+  line = L.polyline(lineCoords, { color: '#722ed1', weight: 5, opacity: 0.85 }).addTo(map);
+  coords.forEach((wp, i) => {
+    const m = L.marker([wp[0], wp[1]], { icon }).addTo(map);
+    m.bindPopup(`<strong>${wp[2]}</strong><br/>海拔: ${wp[3]}<br/>${sysLabel}: ${wp[1].toFixed(6)}, ${wp[0].toFixed(6)}`);
+    markers.push(m);
+  });
+  map.fitBounds(line, { padding: [60, 60] });
+}
+
+function switchMap(type) {
+  document.querySelectorAll('.switcher button').forEach(b => b.classList.remove('active'));
+  document.getElementById('btn-' + type).classList.add('active');
+
+  let tileUrl, coords, sysLabel;
+  if (type === 'amap') {
+    tileUrl = TILES.amap;
+    coords = DATA.gcj02;
+    sysLabel = 'GCJ-02';
+    document.getElementById('coordsys').textContent = '🗺️ 高德地图（GCJ-02）';
+  } else if (type === 'baidu') {
+    tileUrl = TILES.baidu;
+    coords = DATA.bd09;
+    sysLabel = 'BD-09';
+    document.getElementById('coordsys').textContent = '🗺️ 百度地图（BD-09）';
+  } else {
+    tileUrl = TILES.google;
+    coords = DATA.wgs84;
+    sysLabel = 'WGS-84';
+    document.getElementById('coordsys').textContent = '🗺️ Google Maps（WGS-84）';
+  }
+
+  // 更換切片圖層
+  map.eachLayer(layer => {
+    if (layer._url && layer._url.includes('tile')) layer.remove();
+  });
+  L.tileLayer(tileUrl, {
+    attribution: type === 'amap' ? '© 高德地图' : type === 'baidu' ? '© 百度地图' : '© Google Maps',
+    maxZoom: 18,
+  }).addTo(map);
+
+  drawRoute(coords, sysLabel);
+}
+
+// 初始化（默認高德地圖）
+map = L.map('map').setView([DATA.gcj02[5][0], DATA.gcj02[5][1]], 11);
+switchMap('amap');
+</script>
+</body>
+</html>
